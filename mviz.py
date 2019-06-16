@@ -8,9 +8,6 @@ from glumpy import app, gloo, gl
 import pyaudio
 import wave
 
-# REPL:
-# while inotifywait -e close_write mviz.py; do killall "mviz.py"; ./mviz.py& sleep 1.0; wmctrl -a emacs25 & done
-
 SAMPLING_TIME = 1
 
 FORMAT = pyaudio.paInt16
@@ -18,13 +15,7 @@ CHANNELS = 1
 RATE = 44100
 CHUNK_SIZE = 1024
 
-p = pyaudio.PyAudio()
-
-stream = p.open(format=FORMAT,
-                channels=CHANNELS,
-                rate=RATE,
-                input=True,
-                frames_per_buffer=CHUNK_SIZE)
+fmax = RATE
 
 vertex = """
   attribute vec2 position;
@@ -97,6 +88,22 @@ window.set_position(200,300)
 
 time = 0
 
+data = np.zeros(CHUNK_SIZE)
+
+def audio_callback(in_data, frame_count, time_info, status):
+    global data
+    data = in_data
+    return (None, pyaudio.paContinue)
+
+p = pyaudio.PyAudio()
+
+stream = p.open(format=FORMAT,
+                channels=CHANNELS,
+                rate=RATE,
+                input=True,
+                stream_callback=audio_callback,
+                frames_per_buffer=CHUNK_SIZE)
+
 @window.event
 def on_draw(dt):
     global time
@@ -104,16 +111,14 @@ def on_draw(dt):
     time += dt
     quad.draw(gl.GL_TRIANGLE_STRIP)
 
-    stream.start_stream()
-    data = stream.read(CHUNK_SIZE)
-    stream.stop_stream()
-
     chunk = np.frombuffer(data, dtype=np.int16)
     dct = scipy.fftpack.dct(chunk)
 
-    volume_scale = 1.0 / CHUNK_SIZE / 4000
+    volume_scale = 1.0 / CHUNK_SIZE / 5000
 
-    sep = math.floor(dct.size * 0.1)
+    sep_hz = 10
+
+    sep = math.floor(sep_hz * dct.size/RATE * fmax)
 
     volume = np.sum(np.abs(chunk)) * volume_scale
     basses = np.sum(dct[0:sep]) * volume_scale / 2.0
