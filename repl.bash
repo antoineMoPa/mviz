@@ -6,7 +6,7 @@
 #  - focus back on window matching $EDITOR
 # Requirements: inotify-tools wmctrl
 
-EDITOR=emacs25
+EDITOR=emacs
 
 ./mviz.py&
 

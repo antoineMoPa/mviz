@@ -31,45 +31,24 @@ fragment = """
   varying vec2 v_position;
   uniform vec4 color;
   uniform float volume, treble, basses, time;
+  uniform sampler2D spectra;
+
   #define cl(x) clamp(x, 0.0, 1.0)
   void main() {
     vec2 p = v_position;
     vec4 col = vec4(0.0);
-
     float l = length(p);
+    float spectra = texture2D(spectra, vec2(p.x)/2.0 + 0.5).r;
 
-    float b = 1.0 - clamp(l - 0.2 - basses * 0.4, 0.0, 1.0)/0.02;
-    float t = 1.0 - clamp(1.0 - l - 0.1 - treble, 0.0, 1.0)/0.02;
+    float height = spectra;
 
-    vec2 c = vec2(cos(time * 2.0), sin(time * 2.0)) * 0.55;
+    col.r += cos(time * 0.3 + 1.0) * 0.5 + 0.9;
+    col.g += cos(time * 0.3 + 2.0) * 0.5 + 0.9;
+    col.b += cos(time * 0.3 + 3.0) * 0.5 + 0.9;
+    
+    col *= 1.0 - clamp((abs(p.y)-height)/0.01, 0.0, 1.0);
 
-    float center_circle = cl(volume * cl(1.0 - abs(length(p) - 0.2 - b * 0.2)/0.1));
-    float outside_circle = cl(t + clamp(b, 0.0, 1.0));
-    outside_circle *= 1.0 + 0.3 * cos(p.y * 200.0 + time + b * cos(time + p.x));
-    col.r += center_circle * (1.0 + 0.8 * cos(time));
-    col.b += center_circle * (1.0 + 0.8 * sin(time));
-
-    col = clamp(col, 0.0, 1.0);
-
-    col.r += outside_circle * (0.4 + 0.2 * cos(time));
-    col.b += outside_circle * 0.2;
-
-    col = clamp(col, 0.0, 1.0);
-
-    float moving_circle = (0.13 + 0.2 * basses - length(c - p)) / 0.02;
-    moving_circle = clamp(moving_circle, 0.0, 1.0);
-    moving_circle *= 1.0 + 0.2 * cos(length(p) * 30.0 + 10.0  * cos(time * 2.0));
-
-    col.r += moving_circle * (1.0 + 0.4 * cos(time + 0.3));
-    col.b += moving_circle * (1.0 + 0.4 * sin(time * 1.1));
-
-    col = cl(col);
-
-    col.r = pow(col.r, 2.0 + 1.0 * cos(time + p.x));
-    col.g = pow(col.g, 2.0);
-
-
-    col.a = max(col.r + col.g + col.b, 0.1);
+    col.a = 0.5;
 
     gl_FragColor = col;
   } """
@@ -114,22 +93,24 @@ def on_draw(dt):
     chunk = np.frombuffer(data, dtype=np.int16)
     dct = scipy.fftpack.dct(chunk)
 
-    volume_scale = 1.0 / CHUNK_SIZE / 5000
+    volume_scale = 1.0 / CHUNK_SIZE / 1000
 
-    sep_hz = 10
+    sep_hz = 100
 
     sep = math.floor(sep_hz * dct.size/RATE * fmax)
 
     volume = np.sum(np.abs(chunk)) * volume_scale
     basses = np.sum(dct[0:sep]) * volume_scale / 2.0
     treble = np.sum(dct[sep:-1]) * volume_scale * 0.2
+    spectra = np.tile(np.convolve(dct, np.ones(10))[0:1000:10], 1)
 
     quad['volume'] = volume
     quad['basses'] = basses
     quad['treble'] = treble
+    quad['spectra'] = spectra / 10e5
     quad['time'] = time
 
-
+quad['spectra'] = np.ones((100,1))
 app.run()
 
 play_obj.wait_done()
