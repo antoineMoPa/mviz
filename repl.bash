@@ -8,11 +8,12 @@
 
 EDITOR=emacs
 
-./mviz.py&
+# TODO: Remove
+killall inotifywait
 
-while inotifywait -e close_write mviz.py;
-do
+while inotifywait -e close_write mviz.py; do
 	killall "mviz.py";
-	./mviz.py& sleep 1.0;
-	wmctrl -a $EDITOR &
+	./mviz.py& sleep 2.0;
+	wmctrl -a $EDITOR;
+	sleep 1
 done

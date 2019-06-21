@@ -34,28 +34,29 @@ fragment = """
   uniform sampler2D spectra;
 
   #define cl(x) clamp(x, 0.0, 1.0)
+
+  float get_spectra(float p){
+    return texture2D(spectra, vec2(p/2.0+0.5,0.0)).r;
+  }
+
   void main() {
     vec2 p = v_position;
+    p *= 1.2;
     vec4 col = vec4(0.0);
     float l = length(p);
+    float a = atan(p.y, p.x);
 
-    float s = texture2D(spectra, vec2(p.x + 0.5) + 0.5).r;
+    float s = 1.0 - clamp(get_spectra(a / 6.28 - 0.5), 0.0, 0.5);
 
-    float height = s;
+    col += 1.0;
+    float radius_1 = (1.0 - clamp((l - 1.0)/0.01, 0.0, 1.0));
+    col *= clamp((abs(l)-s)/0.01, 0.0, 1.0) * radius_1;
 
-    col.r += cos(time * 0.3 + 1.0) * 0.5 + 0.9;
-    col.g += cos(time * 0.3 + 2.0) * 0.5 + 0.9;
-    col.b += cos(time * 0.3 + 3.0) * 0.5 + 0.9;
-    
-    col *= 1.0 - clamp((abs(p.y)-height)/0.01, 0.0, 1.0);
-    
-    float circle = 0.0;
-    float circle_spectra = texture2D(spectra, vec2(floor(l*10.0)/10.0)/2.0 + 0.5).r;
-    col.r += circle_spectra/0.01 * (0.5 * cos(time + l + 0.4) + 0.5);
-    col.g += circle_spectra/0.01 * (0.5 * cos(time + l + 1.0) + 0.5);
-    col.b += circle_spectra/0.01 * (0.5 * cos(time + l + 2.0) + 0.5);
+    float rolling = texture2D(spectra, vec2((a/6.2832/2.0 + 0.25), (1.0-l)/4.0 - a * 0.01)).r;
+    rolling *= 10.0 * radius_1;
+    col.r += rolling;
+    col.a = 0.3;
 
-    col.a = 0.2;
 
     gl_FragColor = col;
   } """
@@ -90,9 +91,12 @@ stream = p.open(format=FORMAT,
                 stream_callback=audio_callback,
                 frames_per_buffer=CHUNK_SIZE)
 
+sep_hz = 500
+rolling_spectra = np.zeros((sep_hz,sep_hz))
+
 @window.event
 def on_draw(dt):
-    global time
+    global time, rolling_spectra, sep_hz
     #window.clear()
     time += dt
     quad.draw(gl.GL_TRIANGLE_STRIP)
@@ -102,22 +106,22 @@ def on_draw(dt):
 
     volume_scale = 1.0 / CHUNK_SIZE / 1000
 
-    sep_hz = 100
-
     sep = math.floor(sep_hz * dct.size/RATE * fmax)
 
     volume = np.sum(np.abs(chunk)) * volume_scale
     basses = np.sum(dct[0:sep]) * volume_scale / 2.0
     treble = np.sum(dct[sep:-1]) * volume_scale * 0.2
-    spectra = np.tile(np.convolve(dct, np.ones(10))[0:1000:10], 1)
+    step = math.floor(CHUNK_SIZE/sep_hz)
+    spectra = np.convolve(dct, np.ones(step))[0:CHUNK_SIZE:step]
+
+    rolling_spectra[-1,:] = spectra[0:sep_hz]
+    rolling_spectra = np.roll(rolling_spectra, 1, axis=0)
 
     quad['volume'] = volume
     quad['basses'] = basses
     quad['treble'] = treble
-    quad['spectra'] = spectra / 10e5
+    quad['spectra'] = rolling_spectra / 4e6
     quad['time'] = time
 
-quad['spectra'] = np.ones((100,1))
+quad['spectra'] = rolling_spectra
 app.run()
-
-play_obj.wait_done()
