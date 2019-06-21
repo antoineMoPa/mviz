@@ -38,17 +38,24 @@ fragment = """
     vec2 p = v_position;
     vec4 col = vec4(0.0);
     float l = length(p);
-    float spectra = texture2D(spectra, vec2(p.x)/2.0 + 0.5).r;
 
-    float height = spectra;
+    float s = texture2D(spectra, vec2(p.x + 0.5) + 0.5).r;
+
+    float height = s;
 
     col.r += cos(time * 0.3 + 1.0) * 0.5 + 0.9;
     col.g += cos(time * 0.3 + 2.0) * 0.5 + 0.9;
     col.b += cos(time * 0.3 + 3.0) * 0.5 + 0.9;
     
     col *= 1.0 - clamp((abs(p.y)-height)/0.01, 0.0, 1.0);
+    
+    float circle = 0.0;
+    float circle_spectra = texture2D(spectra, vec2(floor(l*10.0)/10.0)/2.0 + 0.5).r;
+    col.r += circle_spectra/0.01 * (0.5 * cos(time + l + 0.4) + 0.5);
+    col.g += circle_spectra/0.01 * (0.5 * cos(time + l + 1.0) + 0.5);
+    col.b += circle_spectra/0.01 * (0.5 * cos(time + l + 2.0) + 0.5);
 
-    col.a = 0.5;
+    col.a = 0.2;
 
     gl_FragColor = col;
   } """
