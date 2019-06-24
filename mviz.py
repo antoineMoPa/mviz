@@ -13,7 +13,7 @@ SAMPLING_TIME = 1
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 44100
-CHUNK_SIZE = 1024
+CHUNK_SIZE = 2048
 
 fmax = RATE
 
@@ -35,8 +35,8 @@ fragment = """
 
   #define cl(x) clamp(x, 0.0, 1.0)
 
-  float get_spectra(float p){
-    return texture2D(spectra, vec2(p/2.0+0.5,0.0)).r;
+  float get_spectra(float p, float past){
+    return texture2D(spectra, vec2(p/2.0+0.5, past)).r;
   }
 
   void main() {
@@ -46,16 +46,20 @@ fragment = """
     float l = length(p);
     float a = atan(p.y, p.x);
 
-    float s = 1.0 - clamp(get_spectra(a / 6.28 - 0.5), 0.0, 0.5);
+    float t = mod(time * 0.1, 0.1);
+
+    float s = 1.0 - clamp(get_spectra(a / 6.28 - 0.5 + t, 0.0), 0.0, 0.5);
 
     col += 1.0;
     float radius_1 = (1.0 - clamp((l - 1.0)/0.01, 0.0, 1.0));
     col *= clamp((abs(l)-s)/0.01, 0.0, 1.0) * radius_1;
 
-    float rolling = texture2D(spectra, vec2((a/6.2832/2.0 + 0.25), (1.0-l)/4.0 - a * 0.01)).r;
+    float rolling = get_spectra(a / 6.28 - 0.0, (1.0-l)/4.0) * (2.0 + a * 0.1);
+    rolling = pow(4.0 * rolling, 4.0);
+
     rolling *= 10.0 * radius_1;
     col.r += rolling;
-    col.a = 0.3;
+    col.a = 0.8;
 
 
     gl_FragColor = col;
@@ -91,7 +95,7 @@ stream = p.open(format=FORMAT,
                 stream_callback=audio_callback,
                 frames_per_buffer=CHUNK_SIZE)
 
-sep_hz = 500
+sep_hz = 1024
 rolling_spectra = np.zeros((sep_hz,sep_hz))
 
 @window.event
@@ -113,6 +117,8 @@ def on_draw(dt):
     treble = np.sum(dct[sep:-1]) * volume_scale * 0.2
     step = math.floor(CHUNK_SIZE/sep_hz)
     spectra = np.convolve(dct, np.ones(step))[0:CHUNK_SIZE:step]
+
+    spectra *= 1 + np.arange(0,len(spectra)) * 0.1
 
     rolling_spectra[-1,:] = spectra[0:sep_hz]
     rolling_spectra = np.roll(rolling_spectra, 1, axis=0)
