@@ -13,7 +13,7 @@ SAMPLING_TIME = 1
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 44100
-CHUNK_SIZE = 1024
+CHUNK_SIZE = 2048
 
 fmax = RATE
 
@@ -31,45 +31,36 @@ fragment = """
   varying vec2 v_position;
   uniform vec4 color;
   uniform float volume, treble, basses, time;
+  uniform sampler2D spectra;
+
   #define cl(x) clamp(x, 0.0, 1.0)
+
+  float get_spectra(float p, float past){
+    return texture2D(spectra, vec2(p/2.0+0.5, past)).r;
+  }
+
   void main() {
     vec2 p = v_position;
+    p *= 1.2;
     vec4 col = vec4(0.0);
-
     float l = length(p);
+    float a = atan(p.y, p.x);
 
-    float b = 1.0 - clamp(l - 0.2 - basses * 0.4, 0.0, 1.0)/0.02;
-    float t = 1.0 - clamp(1.0 - l - 0.1 - treble, 0.0, 1.0)/0.02;
+    float t = mod(time * 0.1, 0.1);
 
-    vec2 c = vec2(cos(time * 2.0), sin(time * 2.0)) * 0.55;
+    float s = 1.0 - clamp(get_spectra(a / 6.28 - 0.5 + t, 0.0), 0.0, 0.5);
 
-    float center_circle = cl(volume * cl(1.0 - abs(length(p) - 0.2 - b * 0.2)/0.1));
-    float outside_circle = cl(t + clamp(b, 0.0, 1.0));
-    outside_circle *= 1.0 + 0.3 * cos(p.y * 200.0 + time + b * cos(time + p.x));
-    col.r += center_circle * (1.0 + 0.8 * cos(time));
-    col.b += center_circle * (1.0 + 0.8 * sin(time));
+    col += 1.0;
+    float radius_1 = (1.0 - clamp((l - 1.0)/0.01, 0.0, 1.0));
+    col *= clamp((abs(l)-s)/0.01, 0.0, 1.0) * radius_1;
 
-    col = clamp(col, 0.0, 1.0);
+    float rolling = get_spectra(a / 6.28 - 0.0, (1.0-l)/4.0) * (2.0 + a * 0.1);
+    rolling = pow(4.0 * rolling, 4.0);
 
-    col.r += outside_circle * (0.4 + 0.2 * cos(time));
-    col.b += outside_circle * 0.2;
+    rolling *= 10.0 * radius_1;
+    col.r += rolling;
+    col.a = 0.8;
 
-    col = clamp(col, 0.0, 1.0);
-
-    float moving_circle = (0.13 + 0.2 * basses - length(c - p)) / 0.02;
-    moving_circle = clamp(moving_circle, 0.0, 1.0);
-    moving_circle *= 1.0 + 0.2 * cos(length(p) * 30.0 + 10.0  * cos(time * 2.0));
-
-    col.r += moving_circle * (1.0 + 0.4 * cos(time + 0.3));
-    col.b += moving_circle * (1.0 + 0.4 * sin(time * 1.1));
-
-    col = cl(col);
-
-    col.r = pow(col.r, 2.0 + 1.0 * cos(time + p.x));
-    col.g = pow(col.g, 2.0);
-
-
-    col.a = max(col.r + col.g + col.b, 0.1);
 
     gl_FragColor = col;
   } """
@@ -104,9 +95,12 @@ stream = p.open(format=FORMAT,
                 stream_callback=audio_callback,
                 frames_per_buffer=CHUNK_SIZE)
 
+sep_hz = 1024
+rolling_spectra = np.zeros((sep_hz,sep_hz))
+
 @window.event
 def on_draw(dt):
-    global time
+    global time, rolling_spectra, sep_hz
     #window.clear()
     time += dt
     quad.draw(gl.GL_TRIANGLE_STRIP)
@@ -114,22 +108,26 @@ def on_draw(dt):
     chunk = np.frombuffer(data, dtype=np.int16)
     dct = scipy.fftpack.dct(chunk)
 
-    volume_scale = 1.0 / CHUNK_SIZE / 5000
-
-    sep_hz = 10
+    volume_scale = 1.0 / CHUNK_SIZE / 1000
 
     sep = math.floor(sep_hz * dct.size/RATE * fmax)
 
     volume = np.sum(np.abs(chunk)) * volume_scale
     basses = np.sum(dct[0:sep]) * volume_scale / 2.0
     treble = np.sum(dct[sep:-1]) * volume_scale * 0.2
+    step = math.floor(CHUNK_SIZE/sep_hz)
+    spectra = np.convolve(dct, np.ones(step))[0:CHUNK_SIZE:step]
+
+    spectra *= 1 + np.arange(0,len(spectra)) * 0.1
+
+    rolling_spectra[-1,:] = spectra[0:sep_hz]
+    rolling_spectra = np.roll(rolling_spectra, 1, axis=0)
 
     quad['volume'] = volume
     quad['basses'] = basses
     quad['treble'] = treble
+    quad['spectra'] = rolling_spectra / 4e6
     quad['time'] = time
 
-
+quad['spectra'] = rolling_spectra
 app.run()
-
-play_obj.wait_done()
