@@ -7,6 +7,8 @@ import numpy as np
 from glumpy import app, gloo, gl
 import pyaudio
 import wave
+from watchdog.observers import Observer
+from watchdog.events import FileModifiedEvent
 
 SAMPLING_TIME = 1
 
@@ -16,6 +18,8 @@ RATE = 44100
 CHUNK_SIZE = 2048
 
 fmax = RATE
+
+
 
 vertex = """
   attribute vec2 position;
@@ -27,55 +31,27 @@ vertex = """
       v_position = position;
   } """
 
-fragment = """
-  varying vec2 v_position;
-  uniform vec4 color;
-  uniform float volume, treble, basses, time;
-  uniform sampler2D spectra;
+fragment = ""
 
-  #define cl(x) clamp(x, 0.0, 1.0)
+with open("fragment.glsl") as fragment_file:
+  fragment = fragment_file.read()
 
-  float get_spectra(float p, float past){
-    return texture2D(spectra, vec2(p/2.0+0.5, past)).r;
-  }
+def build_quad(vertex, fragment):
+    quad = gloo.Program(vertex, fragment, count=4)
 
-  void main() {
-    vec2 p = v_position;
-    p *= 1.2;
-    vec4 col = vec4(0.0);
-    float l = length(p);
-    float a = atan(p.y, p.x);
+    quad['position'] = [(-1.0, -1.0),
+                        (-1.0, +1.0),
+                        (+1.0, -1.0),
+                        (+1.0, +1.0)]
 
-    float t = mod(time * 0.1, 0.1);
+    quad['color'] = 1,0,0,1  # red
 
-    float s = 1.0 - clamp(get_spectra(a / 6.28 - 0.5 + t, 0.0), 0.0, 0.5);
+    return quad
 
-    col += 1.0;
-    float radius_1 = (1.0 - clamp((l - 1.0)/0.01, 0.0, 1.0));
-    col *= clamp((abs(l)-s)/0.01, 0.0, 1.0) * radius_1;
+quad = build_quad(vertex, fragment)
 
-    float rolling = get_spectra(a / 6.28 - 0.0, (1.0-l)/4.0) * (2.0 + a * 0.1);
-    rolling = pow(4.0 * rolling, 4.0);
-
-    rolling *= 10.0 * radius_1;
-    col.r += rolling;
-    col.a = 0.8;
-
-
-    gl_FragColor = col;
-  } """
-
-quad = gloo.Program(vertex, fragment, count=4)
-
-quad['position'] = [(-1.0, -1.0),
-                    (-1.0, +1.0),
-                    (+1.0, -1.0),
-                    (+1.0, +1.0)]
-
-quad['color'] = 1,0,0,1  # red
-
-window = app.Window(width=400, height=400)
-window.set_position(200,300)
+window = app.Window(width=960, height=1000)
+window.set_position(1600,0)
 
 time = 0
 
@@ -97,6 +73,25 @@ stream = p.open(format=FORMAT,
 
 sep_hz = 1024
 rolling_spectra = np.zeros((sep_hz,sep_hz))
+
+observer = Observer()
+event_handler = FileModifiedEvent("fragment.glsl")
+observer.schedule(event_handler, "fragment.glsl")
+observer.start()
+
+def dispatch(event):
+  global quad # ouch..... global variables.........
+  with open("fragment.glsl") as fragment_file:
+    fragment = fragment_file.read()
+    quad = build_quad(vertex, fragment)
+    quad['volume'] = 0.0
+    quad['basses'] = 0.0
+    quad['treble'] = 0.0
+    quad['spectra'] = rolling_spectra / 4e6
+    quad['time'] = 0.0
+    print("Reloaded fragment shader")
+
+event_handler.dispatch = dispatch
 
 @window.event
 def on_draw(dt):
@@ -128,6 +123,7 @@ def on_draw(dt):
     quad['treble'] = treble
     quad['spectra'] = rolling_spectra / 4e6
     quad['time'] = time
+
 
 quad['spectra'] = rolling_spectra
 app.run()
