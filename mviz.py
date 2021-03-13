@@ -36,6 +36,10 @@ fragment = ""
 with open("fragment.glsl") as fragment_file:
   fragment = fragment_file.read()
 
+sep_hz = 1024
+
+rolling_spectra = np.zeros((sep_hz,sep_hz))
+
 def build_quad(vertex, fragment):
     quad = gloo.Program(vertex, fragment, count=4)
 
@@ -45,6 +49,16 @@ def build_quad(vertex, fragment):
                         (+1.0, +1.0)]
 
     quad['color'] = 1,0,0,1  # red
+
+    # Dummy values to initiate uniforms
+    quad['volume'] = 0.0
+    quad['basses'] = 0.0
+    quad['treble'] = 0.0
+    quad['spectra'] = rolling_spectra / 4e6
+    quad['time'] = 0.0
+    quad['width'] = 10
+    quad['height'] = 10
+    quad['ratio'] = 1
 
     return quad
 
@@ -71,9 +85,6 @@ stream = p.open(format=FORMAT,
                 stream_callback=audio_callback,
                 frames_per_buffer=CHUNK_SIZE)
 
-sep_hz = 1024
-rolling_spectra = np.zeros((sep_hz,sep_hz))
-
 observer = Observer()
 event_handler = FileModifiedEvent("fragment.glsl")
 observer.schedule(event_handler, "fragment.glsl")
@@ -83,12 +94,11 @@ def dispatch(event):
   global quad # ouch..... global variables.........
   with open("fragment.glsl") as fragment_file:
     fragment = fragment_file.read()
+    quad.delete()
+
+    # TODO fix memory leak :)
+
     quad = build_quad(vertex, fragment)
-    quad['volume'] = 0.0
-    quad['basses'] = 0.0
-    quad['treble'] = 0.0
-    quad['spectra'] = rolling_spectra / 4e6
-    quad['time'] = 0.0
     print("Reloaded fragment shader")
 
 event_handler.dispatch = dispatch
@@ -98,7 +108,11 @@ def on_draw(dt):
     global time, rolling_spectra, sep_hz
     #window.clear()
     time += dt
-    quad.draw(gl.GL_TRIANGLE_STRIP)
+
+    try:
+        quad.draw(gl.GL_TRIANGLE_STRIP)
+    except:
+        print("Draw failure")
 
     chunk = np.frombuffer(data, dtype=np.int16)
     dct = scipy.fftpack.dct(chunk)
@@ -124,6 +138,10 @@ def on_draw(dt):
     quad['spectra'] = rolling_spectra / 4e6
     quad['time'] = time
 
+    win_size = window.get_size()
+    quad['width'] = win_size[0]
+    quad['height'] = win_size[1]
+    quad['ratio'] = win_size[1] / win_size[0]
 
 quad['spectra'] = rolling_spectra
 app.run()
