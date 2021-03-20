@@ -19,8 +19,6 @@ CHUNK_SIZE = 2048
 
 fmax = RATE
 
-
-
 vertex = """
   attribute vec2 position;
   varying vec2 v_position;
@@ -87,21 +85,38 @@ stream = p.open(format=FORMAT,
 
 observer = Observer()
 event_handler = FileModifiedEvent("fragment.glsl")
+
+def dispatch(event):
+  global should_reload_fragment
+  should_reload_fragment = True
+
+event_handler.dispatch = dispatch
+
 observer.schedule(event_handler, "fragment.glsl")
 observer.start()
 
-def dispatch(event):
-  global quad # ouch..... global variables.........
+should_reload_fragment = True
+
+import objgraph
+import gc
+
+def reload_fragment():
+  global quad, should_reload_fragment
+  should_reload_fragment = False
+
   with open("fragment.glsl") as fragment_file:
     fragment = fragment_file.read()
-    quad.delete()
 
     # TODO fix memory leak :)
+    new_quad = build_quad(vertex, fragment)
 
-    quad = build_quad(vertex, fragment)
+    quad.deactivate()
+    quad.delete()
+    del quad
+    quad = new_quad
+
+    gc.collect()
     print("Reloaded fragment shader")
-
-event_handler.dispatch = dispatch
 
 @window.event
 def on_draw(dt):
@@ -109,10 +124,10 @@ def on_draw(dt):
     #window.clear()
     time += dt
 
-    try:
-        quad.draw(gl.GL_TRIANGLE_STRIP)
-    except:
-        print("Draw failure")
+    if should_reload_fragment:
+      reload_fragment()
+
+    quad.draw(gl.GL_TRIANGLE_STRIP)
 
     chunk = np.frombuffer(data, dtype=np.int16)
     dct = scipy.fftpack.dct(chunk)

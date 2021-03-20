@@ -17,6 +17,7 @@ vec4 xor_viz(vec2 p) {
   float t = mod(time * 0.1, 0.1);
   float s = 1.0 - clamp(get_spectra(p.x - 0.5 + t, 0.0), 0.0, 0.5);
 
+
   s *= volume * 0.2 + 0.7 * (1.0 - 2.0 * length(p));
 
   p = cos(p);
@@ -26,6 +27,7 @@ vec4 xor_viz(vec2 p) {
   int i = int(p.x + 1e3 + s * 100.0);
   int j = int(p.y + 4.4e2 + tan(s * 2.0) * 100.0);
   int z = 0;
+
 
   for (int k = 0; k < 6; k++) {
     z += (i ^ j) & (i % j);
@@ -39,6 +41,8 @@ vec4 xor_viz(vec2 p) {
     col.b += 0.1 * (1.0 - p.x/300.0);
     col.r += 0.15 * (1.0 - p.x/300.0);
   }
+
+  col.r += 1.0;
 
   return col;
 }
@@ -56,5 +60,6 @@ void main() {
 
   gl_FragColor = col;
 }
+
 
 // It's still getting higher as I save
